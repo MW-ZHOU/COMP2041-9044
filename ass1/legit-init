@@ -1,0 +1,20 @@
+#!/bin/dash
+# Written by Maowen Zhou
+[ $# -ne 0 ] && echo usage: "$0" 1>&2 && exit 0
+[ -d .legit ] && echo 'legit-init: error: .legit already exists' 1>&2 && exit 1
+
+mkdir .legit
+mkdir .legit/index
+mkdir .legit/cmtRec
+mkdir .legit/repo
+# default branch is master
+echo master > .legit/HEAD
+# create a log to record all commit numbers made by specific branch
+# (default: master)
+touch .legit/.masterCommitNumber
+# create a file to record all files added by specific branch(default: master)
+mkdir .legit/.masterAdd
+mkdir .legit/.masterRecords
+# create a file containing the lists of branches
+echo master > .legit/existingBranch
+echo 'Initialized empty legit repository in .legit'

@@ -1,0 +1,129 @@
+#!/usr/bin/perl -w
+# Written by Maowen Zhou
+use File::Copy;
+use File::Compare;
+use File::Path qw(remove_tree);
+# Check if there is repository to interact with
+unless (-d ".legit") {
+    print "legit-branch: error: no .legit directory containing legit ",
+    "repository exists\n";
+    exit 1;
+}
+opendir my $cmtRec, '.legit/cmtRec/' or die;
+@numberOfCommits = grep { /\d+/ } readdir($cmtRec);
+closedir $cmtRec;
+if (! @numberOfCommits) {
+    print "legit-branch: error: your repository does not have any commits ",
+    "yet\n";
+    exit 1;
+}
+# get the list of existing branches
+open my $branchList, '<', '.legit/existingBranch' or die;
+@branchList = <$branchList>;
+@branchList = sort(@branchList);
+close $branchList;
+# each line in the list has a newline at the end
+$branchString = join('', @branchList);
+# no command line arguments, print the name of current branch
+if (@ARGV == 0) {
+    print "$branchString";
+} elsif (@ARGV == 1) {
+    $newBranch = $ARGV[0];
+    open my $in, '<', ".legit/HEAD" or die;
+    $currentBranch = <$in>;
+    chomp $currentBranch;
+    close $in;
+    open my $f0, '<', ".legit/.${currentBranch}CommitNumber" or die;
+    # just need the first line
+    my $latestCommitNumber = <$f0>;
+    chomp $latestCommitNumber;
+    close $f0;
+    if ("@ARGV" =~ /^-/) {
+        print "usage: legit-branch [-d] <branch>\n";
+        exit 0;
+    } elsif ("@ARGV" =~ /^\d+$|^[_+=!;.,?@#\$%&*]/) {
+        print "legit-branch: error: invalid branch name '$newBranch'\n";
+        exit 1;
+    } elsif ($branchString =~ /\b$newBranch\b/) {
+        print "legit-branch: error: branch '$newBranch' already exists\n";
+        exit 1;
+    }
+    open my $branchList, '>>', '.legit/existingBranch' or die;
+    print $branchList "$newBranch\n";
+    close $branchList;
+
+    open my $f1, '>', ".legit/.${newBranch}Ancestor" or die;
+    print $f1 "$currentBranch\n";
+    print $f1 "$latestCommitNumber\n";
+    close $f1;
+    # create three files to record added filename, commitNumber and commit
+    # filename
+    open my $add, '>', ".legit/.${newBranch}CommitNumber" or die;
+    close $add;
+    mkdir ".legit/.${newBranch}Add";
+    # backup files that have been committed by current branch
+    mkdir ".legit/.${newBranch}Records";
+    opendir my $d1, ".legit/.${currentBranch}Records" or die;
+    @currentBranchRecords = grep {!/^\.+$/} readdir($d1);
+    closedir $d1;
+    foreach my $oldFile (@currentBranchRecords) {
+        copy(".legit/.${currentBranch}Records/$oldFile",
+        ".legit/.${newBranch}Records/$oldFile") or die;
+        copy(".legit/.${currentBranch}Records/$oldFile",
+        ".legit/.${newBranch}Add/$oldFile") or die;
+    }
+} elsif (@ARGV == 2) {
+    # Print usage message if command line arguments do not include -d
+    unless ("@ARGV" =~ /\-d/) {
+        print "usage: legit-branch [-d] <branch>\n";
+        exit 0;
+    }
+    my $branchToDelete = ("@ARGV" =~ /^-d/) ? pop(@ARGV) : shift(@ARGV);
+
+    if ($branchToDelete eq 'master') {
+        print "legit-branch: error: can not delete branch 'master'\n";
+        exit 0;
+    }
+    # No need to check if the current branch is being deleted
+    unless ($branchString =~ /$branchToDelete/) {
+        print "legit-branch: error: branch '$branchToDelete' does not exist\n";
+        exit 1;
+    }
+    open my $d2, '<', ".legit/HEAD" or die;
+    $currentBranch = <$d2>;
+    chomp $currentBranch;
+    close $d2;
+    # print "currentBranch: $currentBranch\n";
+    # print "branchToDelete: $branchToDelete\n";
+    opendir my $d3, ".legit/.${branchToDelete}Records/" or die;
+    while (my $file = readdir $d3) {
+        next unless (-f ".legit/.${branchToDelete}Records/$file");
+        if (! -f ".legit/.${currentBranch}Records/$file") {
+            print "legit-branch: error: branch '$branchToDelete' has unmerged ",
+            "changes\n";
+            exit 1;
+            close $d3;
+        } elsif (compare(".legit/.${currentBranch}Records/$file",
+                         ".legit/.${branchToDelete}Records/$file") == 1) {
+            print "legit-branch: error: branch '$branchToDelete' has unmerged ",
+            "changes\n";
+            exit 1;
+            close $d3;
+        }
+    }
+    close $d3;
+    # Remove branch needs to be deleted from existingBranch file
+    open my $newBranchFile, '>', ".legit/existingBranch" or die;
+    foreach $branch (@branchList) {
+        chomp $branch;
+        ($branch eq $branchToDelete) ? next : print $newBranchFile "$branch\n";
+    }
+    close $newBranchFile;
+    remove_tree(".legit/.${branchToDelete}Add",
+                ".legit/.${branchToDelete}Records");
+    unlink ".legit/.${branchToDelete}CommitNumber";
+    print "Deleted branch '$branchToDelete'\n";
+# More than 2 arguments
+} else {
+    print "usage: legit-branch [-d] <branch>\n";
+}

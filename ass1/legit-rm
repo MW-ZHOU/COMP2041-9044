@@ -1,0 +1,80 @@
+#!/bin/dash
+# Written by Maowen Zhou
+[ ! -d .legit ] && echo "legit-rm: error: no .legit directory containing legit \
+repository exists" 1>&2 && exit 1
+[ $(ls -l .legit/cmtRec/ | egrep '^d' | wc -l) -eq 0 ] && \
+echo "legit-rm: error: your repository does not have any commits yet" && exit 1
+echo $@ | egrep -q '^--force$|^--cached$|^--force --cached$|^--cached --force$'\
+&& echo "usage: legit-rm [--force] [--cached] <filenames>" && exit 0
+# Use two indicators, force and rmFlag
+rmFlag="rmBoth"
+force=0
+echo $@ | egrep -q '\s?--cached\s' && rmFlag="rmCached"
+echo $@ | egrep -q '\s?--force\s?' && force=1
+fileList=$(echo $@ | sed 's/--force//; s/--cached//')
+currentBranch=$(cat .legit/HEAD)
+if [ $currentBranch = 'master' ]
+then
+    addRec=$(ls .legit/.masterAdd | sort | uniq)
+else
+    # cannot use egrep -q here
+    addRec=$(ls .legit/.${currentBranch}Add/ .legit/.masterAdd/ | \
+    egrep -v '/:' | egrep '.' | sort | uniq)
+fi
+for file in $fileList
+do
+    # file has been deleted from repository
+    [ ! -f .legit/index/"$file" ] && \
+    echo "legit-rm: error: '$file' is not in the legit repository" && exit 1
+    # check if the files to delete was added by master and this branch, or
+    # master only before
+    echo $addRec | egrep -qv "$file" && \
+    echo "legit-rm: error: '$file' is not in the legit repository" && exit 1
+done
+# A File has three different copies, i.e. different version in current workspace,
+# index and repo
+for file in $fileList
+do
+    # force will delete file without warning
+    if [ $force -eq 1 ]
+    then
+        [ $rmFlag = "rmBoth" ] && rm ./"$file" .legit/index/"$file" && \
+        continue
+        [ $rmFlag = "rmCached" ] && rm .legit/index/"$file" && continue
+    # Ensure user will not accidently lose file(s)
+    elif [ $force -eq 0 ]
+    then
+        if [ -f ./"$file" ] && [ -f .legit/index/"$file" ] && \
+           [ -f .legit/repo/"$file" ] && \
+           ! diff ./"$file" .legit/index/"$file" >/dev/null && \
+           ! diff ./"$file" .legit/repo/"$file" >/dev/null && \
+           ! diff .legit/index/"$file" .legit/repo/"$file" >/dev/null
+        then
+            echo -n "legit-rm: error: '$file' in index is different to both "
+            echo "working file and repository" && exit 1
+        elif [ $rmFlag = "rmBoth" ] && [ -f ./"$file" ] && \
+             [ -f .legit/index/"$file" ] && [ -f .legit/repo/"$file" ] && \
+             ! diff ./"$file" .legit/index/"$file" >/dev/null && \
+             diff .legit/index/"$file" .legit/repo/"$file" >/dev/null
+        then
+            echo -n "legit-rm: error: '$file' in repository is different "
+            echo "to working file" && exit 1
+        elif [ $rmFlag = "rmBoth" ] && [ -f ./"$file" ] && \
+             [ -f .legit/index/"$file" ] && [ ! -f .legit/repo/"$file" ]
+        then
+            echo "legit-rm: error: '$file' has changes staged in the index"
+            exit 1
+        elif [ $rmFlag = "rmBoth" ] && [ -f ./"$file" ] && \
+             [ -f .legit/index/"$file" ] && [ -f .legit/repo/"$file" ] &&
+             diff '.' .legit/index/"$file" >/dev/null && \
+             ! diff .legit/index/"$file" .legit/repo/"$file" >/dev/null
+        then
+            echo "legit-rm: error: '$file' has changes staged in the index"
+            exit 1
+        else
+            [ $rmFlag = "rmBoth" ] && rm ./"$file" .legit/index/"$file" && \
+            continue
+            [ $rmFlag = "rmCached" ] && rm .legit/index/"$file" && continue
+        fi
+    fi
+done

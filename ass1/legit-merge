@@ -1,0 +1,168 @@
+#!/usr/bin/perl -w
+# Written by Maowen Zhou
+use File::Copy;
+use File::Compare;
+# Check if there is repository to interact with
+unless (-d ".legit") {
+    print "legit-merge: error: no .legit directory containing legit ",
+    "repository exists\n";
+    exit 1;
+}
+# Check if any commit has been made
+open my $MH, '<', ".legit/.masterCommitNumber" or die;
+my @initialCmt = <$MH>;
+close $MH;
+if (@initialCmt == 0) {
+    print "legit-merge: error: your repository does not have any commits ",
+    "yet\n";
+    exit 1;
+}
+if (@ARGV == 1) {
+    print "legit-merge:error: empty commit message\n";
+    exit 1;
+} elsif (@ARGV == 2 || @ARGV > 3) {
+    print "usage: legit-branch <branch|commit> -m message\n";
+    exit 0;
+} else {
+    open my $HEAD, '<', ".legit/HEAD" or die;
+    my $currentBranch = <$HEAD>;
+    chomp $currentBranch;
+    close $HEAD;
+    my $mergingBranch = $ARGV[0];
+    my $commitMessage = $ARGV[2];
+    open my $f1, '<', ".legit/existingBranch" or die;
+    @existingBranch = <$f1>;
+    $existingBranch = join('', @existingBranch);
+    close $f1;
+    if ($existingBranch !~ /\b$mergingBranch\b/) {
+        print "legit-merge: error: unknown branch '$mergingBranch'\n";
+        exit 1;
+    }
+    open my $f2, '<', ".legit/.${mergingBranch}Ancestor" or die;
+    @fileContent = <$f2>;
+    $ancestorMerging = shift(@fileContent);
+    $latestCommitNumber = shift(@fileContent);
+    chomp $ancestorMerging;
+    chomp $latestCommitNumber;
+    close $f2;
+    open my $f3, '<', ".legit/.${currentBranch}CommitNumber" or die;
+    $currentLatestCmtNumber = <$f3>;
+    chomp $currentLatestCmtNumber;
+    close $f3;
+    # fast merge
+    if ($ancestorMerging eq $currentBranch) {
+        opendir my $d2, ".legit/.${mergingBranch}Records/" or die;
+        my @mergingFileList = grep {!/^\.+$/} readdir $d2;
+        closedir $d2;
+        my $fastForwardFlag = 1;
+        my $conflictFlag = 0;
+        my @conflictFiles;
+        my @autoMergingFiles;
+        foreach my $file (@mergingFileList) {
+            if (-f ".legit/.${currentBranch}Records/$file" &&
+                compare(".legit/.${currentBranch}Records/$file",
+                        ".legit/.${mergingBranch}Records/$file") == 1) {
+                # Get file content of original version
+                open my $f4, '<', ".legit/cmtRec/$latestCommitNumber/$file" or die;
+                my @tmpFileContent0 = <$f4>;
+                close $f4;
+                my @originalFileContent;
+                foreach my $line (@tmpFileContent0) {
+                    chomp $line;
+                    push(@originalFileContent, $line) if ($line !~ /^$/);
+                }
+                # print "@originalFileContent\n";
+                # Get file content of current version
+                open my $f5, '<', ".legit/.${currentBranch}Records/$file" or die;
+                my @tmpFileContent1 = <$f5>;
+                close $f5;
+                my @currentFileContent;
+                foreach my $line (@tmpFileContent1) {
+                    chomp $line;
+                    push(@currentFileContent, $line) if ($line !~ /^$/);
+                }
+                # print "@currentFileContent\n";
+                # Get file content of new version
+                open my $f6, '<', ".legit/.${mergingBranch}Records/$file" or die;
+                my @tmpFileContent2 = <$f6>;
+                close $f6;
+                my @newFileContent;
+                foreach my $line (@tmpFileContent2) {
+                    chomp $line;
+                    push(@newFileContent, $line) if ($line !~ /^$/);
+                }
+                # print "@newFileContent\n";
+                my $numberOfLines = 0;
+                $numberOfLines = @newFileContent > @currentFileContent ?
+                                @newFileContent : @currentFileContent;
+                # loop through three different versions of files line by line
+                # print "$file\n";
+                foreach my $i (1..$numberOfLines) {
+                    if ($originalFileContent[$i - 1] && $currentFileContent[$i - 1] && $newFileContent[$i - 1]) {
+                        # print "$originalFileContent[$i - 1]\t";
+                        # print "$newFileContent[$i - 1]\t";
+                        # print "$currentFileContent[$i - 1]\n";
+                        if ($originalFileContent[$i - 1] !~
+                            $currentFileContent[$i - 1] &&
+                            $originalFileContent[$i - 1] !~
+                            $newFileContent[$i - 1] &&
+                            $newFileContent[$i - 1] !~
+                            $currentFileContent[$i - 1]) {
+                            # print "$originalFileContent[$i - 1]\n";
+                            $conflictFlag = 1;
+                            push(@conflictFiles, $file);
+                            # print "here is excuted\n";
+                        } elsif ($originalFileContent[$i - 1] !~
+                                $currentFileContent[$i - 1] &&
+                                $originalFileContent[$i - 1] =~
+                                $newFileContent[$i - 1]) {
+                            $originalFileContent[$i - 1] = $currentFileContent[$i - 1];
+                        } elsif ($originalFileContent[$i - 1] =~
+                                $currentFileContent[$i - 1] &&
+                                $originalFileContent[$i - 1] !~
+                                $newFileContent[$i - 1]) {
+                            $originalFileContent[$i - 1] = $newFileContent[$i - 1];
+                        }
+                    }
+                }
+                # print "@originalFileContent\n";
+                open my $f7, '>', "./$file" or die;
+                foreach my $line (@originalFileContent) {
+                    print $f7 "$line\n";
+                    # print "$line\n";
+                }
+                push(@autoMergingFiles, $file);
+                close $f7;
+                $fastForwardFlag = 0;
+            }
+        }
+        # some files can not be merged
+        if (@conflictFiles) {
+            print "legit-merge: error: These files can not be merged\n";
+            foreach my $file (@conflictFiles) {
+                print "$file\n";
+            }
+            exit 1;
+        }
+        if ($fastForwardFlag == 1) {
+            foreach my $file (@mergingFileList) {
+                copy(".legit/.${mergingBranch}Records/$file",
+                     ".legit/.${currentBranch}Records/$file");
+                copy(".legit/.${mergingBranch}Records/$file",
+                     ".legit/.${currentBranch}Add/$file");
+                copy(".legit/.${mergingBranch}Records/$file",
+                     "./$file");
+            }
+            print "Fast-forward: no commit created\n";
+            exit 0;
+        } elsif ($fastForwardFlag == 0) {
+            # $outputMessage = `./legit-commit -a -m $commitMessage`;
+            $outputMessage = `legit-commit -a -m $commitMessage`;
+            foreach my $file (@autoMergingFiles) {
+                print "Auto-merging $file\n";
+            }
+            print "$outputMessage";
+        }
+
+    }
+}

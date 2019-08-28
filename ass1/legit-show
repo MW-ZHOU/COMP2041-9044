@@ -1,0 +1,39 @@
+#!/bin/dash
+# Written by Maowen Zhou
+[ ! -d .legit ] && echo "legit-show: error: no .legit directory containing \
+legit repository exists" 1>&2 && exit 1
+# error no commits
+[ $(ls -l .legit/cmtRec/ | egrep '^d' | wc -l) -eq 0 ] && echo "legit-show: \
+error: your repository does not have any commits yet" && exit 1
+[ $# -ne 1 ] && echo "usage: legit-show <commit>:<filename>" && exit 0
+filename=$(echo $1 | cut -d':' -f2)
+echo "$filename" | egrep -v '^[[:alnum:]]{1}[[:alnum:].-_]*$' >/dev/null && \
+echo "legit-show: error: invalid filename '$filename'" 1>&2 $$ exit 1
+currentBranch=$(cat .legit/HEAD)
+if echo $1 | egrep '^:' >/dev/null
+then
+    # can only show files added
+    if [ $currentBranch = 'master' ]
+    then
+        addList=$(ls .legit/.masterAdd | sort | uniq)
+    else
+        addList=$(ls '.legit/.masterAdd/' .legit/.${currentBranch}Add/ | \
+        egrep -qv "/:" | egrep '.' | sort | uniq)
+    fi
+    # File the user want to show is not added by master and current branch
+    echo $addList | egrep -qv "$filename" && \
+    echo "legit-show: error: '$filename' not found in index" && exit 1
+
+    [ ! -f .legit/index/"$filename" ] && \
+    echo "legit-show: error: '$filename' not found in index" && exit 1
+    cat .legit/index/"$filename"
+elif echo $1 | egrep '^[0-9]+:' >/dev/null
+then
+    CommitNumber=$(echo $1 | cut -d':' -f1)
+    [ ! -d .legit/cmtRec/"$CommitNumber"/ ] && \
+    echo "legit-show: error: unknown commit '$CommitNumber'" && exit 1
+    [ ! -f .legit/cmtRec/"$CommitNumber"/"$filename" ] && \
+    echo "legit-show: error: '$filename' not found in commit $CommitNumber" && \
+    exit 1
+    cat .legit/cmtRec/"$CommitNumber"/"$filename"
+fi

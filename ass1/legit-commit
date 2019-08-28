@@ -1,0 +1,69 @@
+#!/bin/dash
+# Written by Maowen Zhou
+# Following code could be improved both in style and logic.
+[ ! -d .legit ] && echo "legit-commit: error: no .legit directory containing \
+legit repository exists" 1>&2 && exit 1
+# The correct usage of legit-commit is [-a] -m commit-message
+echo $@ | egrep "\-m \-a " >/dev/null && echo "usage: legit-commit [-a] -m \
+commit-message" && exit 1
+# find what branch is current on
+currentBranch=$(cat .legit/HEAD)
+# -a option is enabled
+if echo $@ | egrep '^-a|-a$' >/dev/null
+then
+    for fileToAdd in .legit/index/*
+    do
+        # Strip path name and keep only the filename
+        fileToAdd=$(basename $fileToAdd)
+        [ -f "$fileToAdd" ] && cp ./"$fileToAdd" .legit/index/
+        [ -f "$fileToAdd" ] && cp "$fileToAdd" .legit/.${currentBranch}Add
+    done
+fi
+# Check if any of the files in .legit/index/ is changed
+fileListIndexRepo=$(ls -p .legit/index/ .legit/repo/ | egrep -v '/:|/' | \
+egrep '.' | sort | uniq)
+[ -z "$fileListIndexRepo" ] && echo "nothing to commit" && exit 0
+if [ $(ls .legit/repo/ | wc -l) -ne 0 ]
+then
+    changed=0
+    for file in $fileListIndexRepo
+    do
+        # Use && to chain expression, instead of using nested if-else
+        [ -f .legit/index/"$file" ] && [ -f .legit/repo/"$file" ] && \
+        ! diff .legit/index/"$file" .legit/repo/"$file" >/dev/null && changed=1
+        # not in the repo, maybe been committed before
+        [ ! -f .legit/repo/"$file" ] && changed=1
+        # file deleted from current workspace and index
+        [ ! -f .legit/index/"$file" ] && [ -f .legit/repo/"$file" ] && \
+        rm .legit/repo/"$file" && changed=1
+    done
+    [ $changed -eq 0 ] && echo 'nothing to commit' && exit 0
+fi
+# Get the number of commits already made
+numCmts=$(ls -l .legit/cmtRec | egrep '^d' | wc -l)
+# Create a directory to store files of nth commit
+mkdir .legit/cmtRec/"$numCmts"/
+message=$(echo $@ | sed 's/^-a\|-a$//' | sed 's/\(-m\) \(.*\)/\2/')
+# check message if contain new line
+# there are some files in index to commit, otherwise update deletion info
+if [ $(ls .legit/index | wc -l ) -ne 0 ]
+then
+    cp .legit/index/* .legit/cmtRec/"$numCmts"/ && \
+    cp .legit/index/* .legit/repo/
+fi
+currentBranchAddFiles=$(ls .legit/."$currentBranch"Add | sort | uniq)
+for file in $currentBranchAddFiles
+do
+    [ -f .legit/repo/"$file" ] && \
+    cp .legit/.${currentBranch}Add/"$file" .legit/.${currentBranch}Records
+done
+# Create a file containing the message
+echo "$message" > .legit/cmtRec/"$numCmts"/msg
+echo "Committed as commit $numCmts"
+# record the commit number
+if [ -s .legit/."$currentBranch"CommitNumber ]
+then
+    sed -i "1i$numCmts" .legit/."$currentBranch"CommitNumber
+else
+    echo $numCmts > .legit/."$currentBranch"CommitNumber
+fi

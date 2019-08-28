@@ -1,0 +1,25 @@
+#!/bin/dash
+# Written by Maowen Zhou
+[ ! -d .legit ] && echo "legit-add: error: no .legit directory containing \
+legit repository exists" 1>&2 && exit 1
+# check filename format
+for filename in $@
+do
+    echo "$filename" | egrep -qv '^[[:alnum:]]{1}[[:alnum:].-_]*$' && \
+    echo 'usage: legit-add <filename>' && exit 1
+done
+currentBranch=$(cat .legit/HEAD)
+# check if all the files given exist
+for filename in $@
+do
+    [ ! -f ./"$filename" ] && [ ! -f .legit/index/"$filename" ] && \
+    echo "legit-add: error: can not open '$filename'" 1>&2 && exit 1
+done
+for filename in $@
+do
+    # update info of deletion of a file to index, need to remove from Add file
+    [ ! -f ./"$filename" ] && [ -f .legit/index/"$filename" ] && \
+    rm .legit/index/"$filename" && continue
+    cp ./"$filename" ./.legit/index
+    cp ./"$filename" .legit/.${currentBranch}Add
+done

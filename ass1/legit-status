@@ -1,0 +1,52 @@
+#!/bin/dash
+# Written by Maowen Zhou
+[ ! -d .legit ] && echo "legit-status: error: no .legit directory containing \
+legit repository exists" 1>&2 && exit 1
+[ $(ls -l .legit/cmtRec/ | egrep '^d' | wc -l) -eq 0 ] && echo "legit-status: \
+error: your repository does not have any commits yet" && exit 1
+# List all the files in current dir, add Record and commit Record
+currentBranch=$(cat .legit/HEAD)
+# wholeFileList=$({ ls -p './' .legit/."$currentBranch"Add; \
+# cat .legit/."$currentBranch"CommitNumber; } | egrep -v '/:|/' | egrep '.' | \
+# sort | uniq)
+wholeFileList=$({ ls -p './' .legit/index/; ls .legit/repo/; } | \
+egrep -v '/:|/' | egrep '.' | \
+sort | uniq)
+for file in $wholeFileList
+do
+    # A file is in index but not in repo(never been committed)
+    [ -f .legit/index/"$file" ] && [ ! -f .legit/repo/"$file" ] && \
+    echo "$file - added to index" && continue
+    # A file is not in index, then it is consider untracked
+    [ -f "$file" ] && [ ! -f .legit/index/"$file" ] && \
+    echo "$file - untracked" && continue
+    # A file is deleted by rm
+    [ ! -f "$file" ] && [ -f .legit/index/"$file" ] && \
+    [ -f .legit/repo/"$file" ] && echo "$file - file deleted" && continue
+    # A file is deleted by legit-rm without --cached option
+    [ ! -f "$file" ] && [ ! -f .legit/index/"$file" ] && \
+    [ -f .legit/repo/"$file" ] && echo "$file - deleted" && continue
+    # A file has three copies, i.e. current workspace, index and repo
+    if [ -f "$file" ] && [ -f .legit/index/"$file" ] && \
+       [ -f .legit/repo/"$file" ]
+    then
+        # same as repo
+        diff '.' .legit/index/"$file" >/dev/null && \
+        diff .legit/index/"$file" .legit/repo/"$file" >/dev/null && \
+        echo "$file - same as repo" && continue
+        # changes not staged
+        diff .legit/index/"$file" .legit/repo/"$file" >/dev/null && \
+        ! diff '.' .legit/index/"$file" >/dev/null && \
+        echo "$file - file changed, changes not staged for commit" && continue
+        # changes staged
+        diff '.' .legit/index/"$file" >/dev/null && \
+        ! diff .legit/index/"$file" .legit/repo/"$file" >/dev/null && \
+        echo "$file - file changed, changes staged for commit" && continue
+        # different changes staged
+        ! diff '.' .legit/index/"$file" >/dev/null && \
+        ! diff .legit/index/"$file" .legit/repo/"$file" >/dev/null && \
+        ! diff '.' .legit/repo/"$file" >/dev/null && \
+        echo "$file - file changed, different changes staged for commit" && \
+        continue
+    fi
+done

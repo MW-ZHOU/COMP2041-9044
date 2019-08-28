@@ -1,0 +1,24 @@
+#!/bin/dash
+# Written by Maowen Zhou
+[ ! -d .legit ] && echo "legit-log: error: no .legit directory containing \
+legit repository exists" 1>&2 && exit 1
+# error no commits
+[ $(ls .legit/cmtRec | wc -l) -eq 0 ] && echo "legit-log: error: your \
+repository does not have any commits yet" && exit 1
+currentBranch=$(cat .legit/HEAD)
+if [ $currentBranch = 'master' ]
+then
+    branchCmtRec=$(ls .legit/cmtRec | sort -r)
+else
+    branchCmtRec=$(cat .legit/."$currentBranch"CommitNumber \
+    .legit/.masterCommitNumber)
+fi
+# legit-log will show only commits made by master when on master, and all
+# commits made by master and itself when on other branch
+for cmtNum in $branchCmtRec
+do
+    if [ -d .legit/cmtRec/"$cmtNum"/ ] && [ -f .legit/cmtRec/"$cmtNum"/msg ]
+    then
+        echo $cmtNum $(cat .legit/cmtRec/"$cmtNum"/msg)
+    fi
+done

@@ -1,0 +1,109 @@
+#!/usr/bin/perl -w
+# Written by Maowen Zhou
+use File::Copy;
+use File::Compare;
+
+# Check if there is repository to interact with
+unless (-d ".legit") {
+    print "legit-checkout: error: no .legit directory containing legit ",
+    "repository exists\n";
+    exit 1;
+}
+# Check if any commit has been made
+open my $MH, '<', ".legit/.masterCommitNumber" or die;
+my @initialCmt = <$MH>;
+close $MH;
+if (@initialCmt == 0) {
+    print "legit-checkout: error: your repository does not have any commits ",
+    "yet\n";
+    exit 1;
+}
+if (@ARGV != 1) {
+    print "usage: legit-checkout <branch>\n";
+    exit 0;
+}
+# Get the list of existing branch
+open my $f1, '<', ".legit/existingBranch" or die;
+my @branchList = <$f1>;
+close $f1;
+# Get the name of current branch
+open my $f2, '<', ".legit/HEAD" or die;
+my $currentBranch = <$f2>;
+# Input from file contains newline at the end
+chomp $currentBranch;
+close $f2;
+# Create a string of all existing branch
+my $branchString = join('', @branchList);
+my $newBranch = $ARGV[0];
+# Stay on the same branch
+if ($newBranch eq $currentBranch) {
+    print "Already on '$currentBranch'\n";
+    exit 0;
+}
+# Branch switching to is not created yet
+unless ($branchString =~ /$newBranch/) {
+    print "legit-checkout: error: unknown branch '$newBranch'\n";
+    exit 1;
+}
+opendir my $d1, "." or die;
+my @unstagedFile;
+my @fileOverWritten;
+while (my $file = readdir($d1)) {
+    next unless (-f $file);
+    # Don't touch files that are untracked
+    next if (! -f ".legit/index/$file" && ! -f ".legit/repo/$file");
+    # Some files in the current workspace is not committed, record these files
+    if (compare(".legit/index/$file", ".legit/repo/$file") == 1) {
+        push @unstagedFile, $file;
+        next;
+    } elsif (compare(".legit/.${newBranch}Add/$file",
+                     ".legit/.${newBranch}Records/$file") == 1 &&
+             compare("./$file", ".legit/.${newBranch}Add/$file") == 0) {
+        push @unstagedFile, $file;
+        next;
+    } elsif (compare("./$file", ".legit/index/$file") == 1 &&
+        compare(".legit/repo/$file", ".legit/index/$file") == 0 &&
+        compare(".legit/repo/$file",
+                ".legit/.${newBranch}Records/$file") == 0 &&
+        compare(".legit/.${newBranch}Records/$file",
+                ".legit/.${currentBranch}Records/$file") == 0) {
+        push @unstagedFile, $file;
+        next;
+    } elsif ((! -f ".legit/.${currentBranch}Add/$file" ||
+              ! -f ".legit/.${currentBranch}Records/$file") &&
+              compare("./$file", ".legit/.${newBranch}Records/$file") == 1) {
+        push(@fileOverWritten, $file);
+        next;
+    } elsif (compare("./$file", ".legit/.${newBranch}Records/$file") == 0) {
+        next;
+    }
+    # Unnecessary files can be removed
+    unlink "./$file";
+}
+close $d1;
+# Some files might be overwritten by switching to a new branch
+if (@fileOverWritten) {
+    print "legit-checkout: error: Your changes to the following files would ",
+    "be overwritten by checkout:\n";
+    foreach my $file (@fileOverWritten) {
+        print "$file\n";
+    }
+    exit 1;
+}
+$unstagedFile = join(' ', @unstagedFile);
+opendir my $d2, ".legit/.${newBranch}Records" or die;
+while (my $file = readdir($d2)) {
+    next unless (-f ".legit/.${newBranch}Records/$file");
+    if ($unstagedFile =~ /$file/) {
+        next;
+    }
+    copy(".legit/.${newBranch}Records/$file", "./$file");
+    copy(".legit/.${newBranch}Records/$file", ".legit/index/$file");
+    copy(".legit/.${newBranch}Records/$file", ".legit/repo/$file");
+}
+close $d2;
+# Switching branch
+open my $f5, '>', ".legit/HEAD" or die;
+print $f5 $newBranch;
+close $f5;
+print "Switched to branch '$newBranch'\n";
