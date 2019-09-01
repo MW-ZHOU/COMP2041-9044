@@ -1,0 +1,14 @@
+body {
+    background-color: lightyellow;
+    font-family: verdana;
+}
+h1 {
+    color: hsl(123);
+}
+p {
+    color: Blue;
+    font-size: 140%;
+}
+img {
+    border: 8px solid powderblue;
+}
