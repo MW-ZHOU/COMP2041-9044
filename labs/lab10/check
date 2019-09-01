@@ -1,0 +1,2 @@
+#!/bin/bash
+cut -d' ' -f 1 < Marks | sort | uniq -c | egrep -v '^ *1' | sed -e 's/^.* //'
